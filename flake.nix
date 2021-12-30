@@ -58,6 +58,11 @@
           defaultPackage = packages."wusic";
 
           devShell = pkgs.mkShell {
+            nativeBuildInputs = with pkgs; [
+              rustfmt
+            ];
+            RUST_SRC_PATH = "${pkgs.rust.packages.stable.rustPlatform.rustLibSrc}";
+
             buildInputs = with pkgs; [
               pkg-config
               stdenv.cc.cc

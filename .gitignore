@@ -3,3 +3,6 @@
 .direnv/
 result
 result/
+
+data/
+store/
