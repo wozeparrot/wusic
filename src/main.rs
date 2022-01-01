@@ -95,7 +95,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             .for_each(|file| {
                 // Load song
                 let path = file.path();
-                let song = Song::new(path).unwrap();
+                let mut song = Song::new(path).unwrap();
                 let format = ffmpeg::format::input(&path).unwrap();
 
                 // Get current metadata
@@ -113,7 +113,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 }
 
                 // perceptually hash song
-                let phash = gen_phash(&song.analysis);
+                let mut phash = gen_phash(&song.analysis);
                 if let Some(v) = db.get(phash.to_be_bytes()).unwrap() {
                     let stored: Stored = bincode::deserialize(&v).unwrap();
 
@@ -215,7 +215,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                         .unwrap()
                         .to_owned();
 
-                        let new_path =
+                        let mut new_path =
                             msp.join(format!("{:x}_{:x}.opus", phash >> 32, (phash << 96) >> 96));
 
                         if sub_m.is_present("copy") {
@@ -245,6 +245,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                                 .wait()
                                 .unwrap();
                         } else {
+                            let tmp_path = msp.join(format!("{:x}_{:x}.tmp", phash >> 32, (phash << 96) >> 96));
                             // Transcode over file
                             Command::new("ffmpeg")
                                 .arg("-i")
@@ -269,11 +270,18 @@ fn main() -> Result<(), Box<dyn Error>> {
                                 .arg("-hide_banner")
                                 .arg("-loglevel")
                                 .arg("error")
-                                .arg(&new_path.to_str().unwrap())
+                                .arg(&tmp_path.to_str().unwrap())
                                 .spawn()
                                 .unwrap()
                                 .wait()
                                 .unwrap();
+                            // Recalculate perceptual hash
+                            song = Song::new(&tmp_path.to_str().unwrap()).unwrap();
+                            phash = gen_phash(&song.analysis);
+                            new_path = msp.join(format!("{:x}_{:x}.opus", phash >> 32, (phash << 96) >> 96));
+                            println!("New phash: {:x}_{:x}", phash >> 32, (phash << 96) >> 96);
+                            // Move tmp file over to correct position
+                            fs::rename(&tmp_path, &new_path).unwrap();
                         }
 
                         // r128gain song
