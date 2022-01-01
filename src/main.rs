@@ -325,7 +325,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             if sub_m.is_present("detailed") {
                 println!("{}", serde_json::to_string(&stored).unwrap());
             } else {
-                println!("{} - {}\t| {} :: {:x}_{:x}", stored.artist, stored.title, stored.album, stored.phash >> 32, (stored.phash << 96) >> 96);
+                println!("{:x}_{:x} | {} - {}\t| {}", stored.phash >> 32, (stored.phash << 96) >> 96, stored.artist, stored.title, stored.album);
             }
         });
     } else if let Some(_) = matches.subcommand_matches("sync") {
