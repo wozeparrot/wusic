@@ -220,7 +220,30 @@ fn main() -> Result<(), Box<dyn Error>> {
 
                         if sub_m.is_present("copy") {
                             // Copy over file
-                            fs::copy(&path, &new_path).unwrap();
+                            Command::new("ffmpeg")
+                                .arg("-i")
+                                .arg(&path.to_str().unwrap())
+                                .arg("-map_metadata")
+                                .arg("-1")
+                                .arg("-metadata")
+                                .arg(format!("TITLE={}", title))
+                                .arg("-metadata")
+                                .arg(format!("ARTIST={}", artist))
+                                .arg("-metadata")
+                                .arg(format!("ALBUM={}", album))
+                                .arg("-f")
+                                .arg("opus")
+                                .arg("-c:a")
+                                .arg("copy")
+                                .arg("-vn")
+                                .arg("-hide_banner")
+                                .arg("-loglevel")
+                                .arg("error")
+                                .arg(&new_path.to_str().unwrap())
+                                .spawn()
+                                .unwrap()
+                                .wait()
+                                .unwrap();
                         } else {
                             // Transcode over file
                             Command::new("ffmpeg")
@@ -302,7 +325,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             if sub_m.is_present("detailed") {
                 println!("{}", serde_json::to_string(&stored).unwrap());
             } else {
-                println!("{} - {}\t| {}", stored.artist, stored.title, stored.album);
+                println!("{} - {}\t| {} :: {:x}_{:x}", stored.artist, stored.title, stored.album, stored.phash >> 32, (stored.phash << 96) >> 96);
             }
         });
     } else if let Some(_) = matches.subcommand_matches("sync") {
