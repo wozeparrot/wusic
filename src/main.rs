@@ -3,7 +3,7 @@ extern crate ffmpeg_next as ffmpeg;
 use bincode;
 use bliss_audio::distance::cosine_distance;
 use bliss_audio::{Analysis, AnalysisIndex, Song};
-use clap::{App, Arg, SubCommand};
+use clap::{Arg, Command};
 use half::f16;
 use rust_fuzzy_search::fuzzy_compare;
 use serde::{Deserialize, Serialize};
@@ -12,7 +12,7 @@ use sled::{self, Db};
 use walkdir::{self, WalkDir};
 
 use std::path::Path;
-use std::process::Command;
+use std::process;
 use std::{env, error::Error};
 use std::{fs, io};
 
@@ -29,47 +29,47 @@ struct Stored {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let matches = App::new("wusic")
+    let matches = Command::new("wusic")
         .version(env!("CARGO_PKG_VERSION"))
         .author("wozeparrot")
         .about("A music storage system")
         .subcommand(
-            SubCommand::with_name("ingest")
+            Command::new("ingest")
                 .about("Ingest music into the database.")
                 .arg(
-                    Arg::with_name("path")
+                    Arg::new("path")
                         .long("path")
                         .help("Path to folder to ingest.")
                         .takes_value(true)
                         .required(true),
                 )
                 .arg(
-                    Arg::with_name("copy")
+                    Arg::new("copy")
                         .long("copy")
                         .help("Copy songs instead of transcoding (Make sure they are in the correct format first (Opus 160k 48k))")
                         .takes_value(false),
                 ),
         )
         .subcommand(
-            SubCommand::with_name("list")
+            Command::new("list")
                 .about("List music in the database")
                 .arg(
-                    Arg::with_name("detailed")
+                    Arg::new("detailed")
                         .long("detailed")
                         .help("List song analysis information.")
                         .takes_value(false),
                 ),
         )
-        .subcommand(SubCommand::with_name("sync").about("Syncs database with the store"))
+        .subcommand(Command::new("sync").about("Syncs database with the store"))
         .arg(
-            Arg::with_name("db")
+            Arg::new("db")
                 .long("db")
                 .help("Path to database.")
                 .takes_value(true)
                 .required(true),
         )
         .arg(
-            Arg::with_name("store")
+            Arg::new("store")
                 .long("store")
                 .help("Path to music store.")
                 .takes_value(true)
@@ -137,20 +137,6 @@ fn main() -> Result<(), Box<dyn Error>> {
                     // get closest song
                     let (closest, closest_dist, tclosest, tclosest_dist) =
                         find_closest_song(&db, &title, &song.analysis);
-                    if closest != 0 {
-                        let closest_stored: Stored =
-                            bincode::deserialize(&db.get(closest.to_be_bytes()).unwrap().unwrap())
-                                .unwrap();
-                        println!("--- Closest Song (Dist: {}) ---", closest_dist);
-                        println!(
-                            "{} - {}\t| {}: {:x}_{:x}",
-                            closest_stored.artist,
-                            closest_stored.title,
-                            closest_stored.album,
-                            closest >> 32,
-                            (closest << 96) >> 96
-                        );
-                    }
                     if tclosest != 0 {
                         let tclosest_stored: Stored =
                             bincode::deserialize(&db.get(tclosest.to_be_bytes()).unwrap().unwrap())
@@ -164,6 +150,25 @@ fn main() -> Result<(), Box<dyn Error>> {
                             tclosest >> 32,
                             (tclosest << 96) >> 96
                         );
+                    }
+                    if closest != 0 {
+                        let closest_stored: Stored =
+                            bincode::deserialize(&db.get(closest.to_be_bytes()).unwrap().unwrap())
+                                .unwrap();
+                        println!("--- Closest Song (Dist: {}) ---", closest_dist);
+                        println!(
+                            "{} - {}\t| {}: {:x}_{:x}",
+                            closest_stored.artist,
+                            closest_stored.title,
+                            closest_stored.album,
+                            closest >> 32,
+                            (closest << 96) >> 96
+                        );
+                        // skip if closer that 0.0001
+                        if closest_dist < 0.0001 {
+                            println!("phash Already in DB so Skipping!");
+                            return;
+                        }
                     }
                     println!("-----------------");
 
@@ -220,7 +225,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
                         if sub_m.is_present("copy") {
                             // Copy over file
-                            Command::new("ffmpeg")
+                            process::Command::new("ffmpeg")
                                 .arg("-i")
                                 .arg(&path.to_str().unwrap())
                                 .arg("-map_metadata")
@@ -245,9 +250,13 @@ fn main() -> Result<(), Box<dyn Error>> {
                                 .wait()
                                 .unwrap();
                         } else {
-                            let tmp_path = msp.join(format!("{:x}_{:x}.tmp", phash >> 32, (phash << 96) >> 96));
+                            let tmp_path = msp.join(format!(
+                                "{:x}_{:x}.tmp",
+                                phash >> 32,
+                                (phash << 96) >> 96
+                            ));
                             // Transcode over file
-                            Command::new("ffmpeg")
+                            process::Command::new("ffmpeg")
                                 .arg("-i")
                                 .arg(&path.to_str().unwrap())
                                 .arg("-map_metadata")
@@ -278,14 +287,18 @@ fn main() -> Result<(), Box<dyn Error>> {
                             // Recalculate perceptual hash
                             song = Song::new(&tmp_path.to_str().unwrap()).unwrap();
                             phash = gen_phash(&song.analysis);
-                            new_path = msp.join(format!("{:x}_{:x}.opus", phash >> 32, (phash << 96) >> 96));
+                            new_path = msp.join(format!(
+                                "{:x}_{:x}.opus",
+                                phash >> 32,
+                                (phash << 96) >> 96
+                            ));
                             println!("New phash: {:x}_{:x}", phash >> 32, (phash << 96) >> 96);
                             // Move tmp file over to correct position
                             fs::rename(&tmp_path, &new_path).unwrap();
                         }
 
                         // r128gain song
-                        Command::new("r128gain")
+                        process::Command::new("r128gain")
                             .arg("-v")
                             .arg("warning")
                             .arg(&new_path.to_str().unwrap())
@@ -333,7 +346,14 @@ fn main() -> Result<(), Box<dyn Error>> {
             if sub_m.is_present("detailed") {
                 println!("{}", serde_json::to_string(&stored).unwrap());
             } else {
-                println!("{:x}_{:x} | {} - {}\t| {}", stored.phash >> 32, (stored.phash << 96) >> 96, stored.artist, stored.title, stored.album);
+                println!(
+                    "{:x}_{:x} | {} - {}\t| {}",
+                    stored.phash >> 32,
+                    (stored.phash << 96) >> 96,
+                    stored.artist,
+                    stored.title,
+                    stored.album
+                );
             }
         });
     } else if let Some(_) = matches.subcommand_matches("sync") {
@@ -404,7 +424,6 @@ fn main() -> Result<(), Box<dyn Error>> {
             }
         });
     } else {
-        println!("{}", matches.usage());
         std::process::exit(1);
     }
 
